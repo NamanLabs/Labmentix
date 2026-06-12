@@ -1,0 +1,9 @@
+{
+  "architecture": "Stacked LSTM",
+  "units": 100,
+  "dropout": 0.2,
+  "learning_rate": 0.001,
+  "lookback": 50,
+  "scaler": "MinMaxScaler(0,1)",
+  "train_size": 1932
+}
