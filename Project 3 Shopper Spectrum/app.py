@@ -5,15 +5,10 @@ Shopper Spectrum -- Streamlit Web Application
 
 Two modules:
   1. Product Recommendation : enter a product name, get 5 similar products
-     (item-based collaborative filtering / cosine similarity)
   2. Customer Segmentation  : enter Recency, Frequency, Monetary, get the
      predicted customer segment (Random Forest classifier)
 
-Before running this app, generate the model artifacts once with:
-    python train_model.py
-
-Then launch the app with:
-    streamlit run app.py
+Run with: streamlit run app.py
 """
 
 import os
@@ -21,6 +16,14 @@ import numpy as np
 import pandas as pd
 import joblib
 import streamlit as st
+from sklearn.metrics.pairwise import cosine_similarity
+
+# --------------------------------------------------------------------------
+# Paths -- work correctly both locally and on Streamlit Cloud
+# --------------------------------------------------------------------------
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+SAVE_DIR = os.path.join(BASE_DIR, "saved_models")
+DATA_PATH = os.path.join(BASE_DIR, "online_retail.csv")
 
 # --------------------------------------------------------------------------
 # Page config
@@ -30,8 +33,6 @@ st.set_page_config(
     page_icon="🛒",
     layout="wide",
 )
-
-SAVE_DIR = "saved_models"
 
 SEGMENT_COLORS = {
     "High-Value": "#2e7d32",
@@ -47,30 +48,63 @@ SEGMENT_DESCRIPTIONS = {
     "At-Risk": "Haven't purchased in a long time. Target with win-back campaigns before they're lost for good.",
 }
 
+ADMIN_CODES = ["POST", "M", "C2", "DOT", "BANK CHARGES", "PADS", "CRUK"]
+
+
+# --------------------------------------------------------------------------
+# Build similarity matrix from CSV (called only if .pkl not found)
+# --------------------------------------------------------------------------
+def build_similarity_matrix():
+    df = pd.read_csv(DATA_PATH)
+    df["InvoiceNo"] = df["InvoiceNo"].astype(str)
+    df = df.drop_duplicates()
+    df = df.dropna(subset=["CustomerID"])
+    df = df[(df["Quantity"] > 0) & (df["UnitPrice"] > 0)]
+    df = df[~df["InvoiceNo"].str.startswith("C")]
+
+    df_products = df[~df["StockCode"].str.upper().isin(ADMIN_CODES)]
+
+    basket = df_products.pivot_table(
+        index="CustomerID", columns="StockCode",
+        values="Quantity", aggfunc="sum", fill_value=0
+    )
+    basket_bin = (basket > 0).astype(int)
+
+    sim = cosine_similarity(basket_bin.T)
+    item_sim_df = pd.DataFrame(sim, index=basket_bin.columns, columns=basket_bin.columns)
+
+    sim_path = os.path.join(SAVE_DIR, "item_similarity_matrix.pkl")
+    joblib.dump(item_sim_df, sim_path)
+
+    return item_sim_df
+
 
 # --------------------------------------------------------------------------
 # Cached artifact loading
 # --------------------------------------------------------------------------
 @st.cache_resource
 def load_artifacts():
-    missing = [
-        f for f in [
-            "rfm_scaler.pkl",
-            "segment_classifier.pkl",
-            "segment_label_encoder.pkl",
-            "item_similarity_matrix.pkl",
-            "product_description_lookup.pkl",
-        ]
-        if not os.path.exists(f"{SAVE_DIR}/{f}")
+    required = [
+        "rfm_scaler.pkl",
+        "segment_classifier.pkl",
+        "segment_label_encoder.pkl",
+        "product_description_lookup.pkl",
     ]
+    missing = [f for f in required if not os.path.exists(os.path.join(SAVE_DIR, f))]
     if missing:
         return None
 
-    scaler = joblib.load(f"{SAVE_DIR}/rfm_scaler.pkl")
-    model = joblib.load(f"{SAVE_DIR}/segment_classifier.pkl")
-    label_encoder = joblib.load(f"{SAVE_DIR}/segment_label_encoder.pkl")
-    item_sim_df = joblib.load(f"{SAVE_DIR}/item_similarity_matrix.pkl")
-    desc_lookup = joblib.load(f"{SAVE_DIR}/product_description_lookup.pkl")
+    scaler       = joblib.load(os.path.join(SAVE_DIR, "rfm_scaler.pkl"))
+    model        = joblib.load(os.path.join(SAVE_DIR, "segment_classifier.pkl"))
+    label_encoder = joblib.load(os.path.join(SAVE_DIR, "segment_label_encoder.pkl"))
+    desc_lookup  = joblib.load(os.path.join(SAVE_DIR, "product_description_lookup.pkl"))
+
+    sim_path = os.path.join(SAVE_DIR, "item_similarity_matrix.pkl")
+    if os.path.exists(sim_path):
+        item_sim_df = joblib.load(sim_path)
+    else:
+        with st.spinner("Building recommendation engine for the first time (~30 sec)..."):
+            item_sim_df = build_similarity_matrix()
 
     return {
         "scaler": scaler,
@@ -81,15 +115,13 @@ def load_artifacts():
     }
 
 
-def recommend_products(product_name: str, item_sim_df: pd.DataFrame, desc_lookup: pd.Series, n: int = 5):
+def recommend_products(product_name, item_sim_df, desc_lookup, n=5):
     matches = desc_lookup[desc_lookup.str.contains(product_name, case=False, na=False, regex=False)]
     if len(matches) == 0:
         return None, None
-
     code = matches.index[0]
     matched_name = desc_lookup.loc[code]
     sims = item_sim_df[code].drop(code).sort_values(ascending=False).head(n)
-
     results = pd.DataFrame({
         "StockCode": sims.index,
         "Product": desc_lookup.loc[sims.index].values,
@@ -98,15 +130,15 @@ def recommend_products(product_name: str, item_sim_df: pd.DataFrame, desc_lookup
     return matched_name, results
 
 
-def predict_segment(recency: float, frequency: float, monetary: float, artifacts: dict):
+def predict_segment(recency, frequency, monetary, artifacts):
     features = pd.DataFrame({
-        "Recency_log": [np.log1p(recency)],
+        "Recency_log":   [np.log1p(recency)],
         "Frequency_log": [np.log1p(frequency)],
-        "Monetary_log": [np.log1p(monetary)],
+        "Monetary_log":  [np.log1p(monetary)],
     })
     scaled = artifacts["scaler"].transform(features)
     pred_encoded = artifacts["model"].predict(scaled)[0]
-    pred_proba = artifacts["model"].predict_proba(scaled)[0]
+    pred_proba   = artifacts["model"].predict_proba(scaled)[0]
     segment = artifacts["label_encoder"].inverse_transform([pred_encoded])[0]
     proba_df = pd.DataFrame({
         "Segment": artifacts["label_encoder"].classes_,
@@ -173,11 +205,11 @@ def main():
 
         c1, c2, c3 = st.columns(3)
         with c1:
-            recency = st.number_input("Recency (days since last purchase)", min_value=0, value=30, step=1)
+            recency  = st.number_input("Recency (days since last purchase)", min_value=0, value=30, step=1)
         with c2:
             frequency = st.number_input("Frequency (number of purchases)", min_value=1, value=5, step=1)
         with c3:
-            monetary = st.number_input("Monetary (total spend, £)", min_value=0.0, value=500.0, step=10.0)
+            monetary  = st.number_input("Monetary (total spend, £)", min_value=0.0, value=500.0, step=10.0)
 
         if st.button("Predict Cluster", type="primary"):
             segment, proba_df = predict_segment(recency, frequency, monetary, artifacts)
@@ -198,7 +230,7 @@ def main():
             st.bar_chart(proba_df.set_index("Segment"))
 
     st.divider()
-    st.caption("Shopper Spectrum -- Built with a Random Forest customer segmentation model and an item-based collaborative filtering recommendation engine.")
+    st.caption("Shopper Spectrum -- Random Forest segmentation + item-based collaborative filtering recommendations.")
 
 
 if __name__ == "__main__":
