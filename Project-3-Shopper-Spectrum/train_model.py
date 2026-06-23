@@ -1,23 +1,3 @@
-"""
-train_model.py
-================
-Shopper Spectrum -- Model Training Script
-
-Standalone script (run outside the notebook) that:
-  1. Loads and cleans the online_retail.csv transaction data
-  2. Builds customer-level RFM (Recency, Frequency, Monetary) features
-  3. Labels each customer's segment using a rule-based RFM quartile-scoring
-     system (business logic, NOT machine learning)
-  4. Trains a SUPERVISED classifier (Random Forest) to predict a customer's
-     segment from their RFM values -- this is the model the Streamlit app uses
-  5. Builds an item-based collaborative filtering recommendation engine
-     (cosine similarity over the customer-product purchase matrix)
-  6. Saves every artifact needed by app.py into the saved_models/ folder
-
-Run this once before launching the Streamlit app:
-    python train_model.py
-"""
-
 import os
 import warnings
 warnings.filterwarnings("ignore")
@@ -32,19 +12,12 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, f1_score, classification_report
 from sklearn.metrics.pairwise import cosine_similarity
 
-# --------------------------------------------------------------------------
-# Config
-# --------------------------------------------------------------------------
-DATA_PATH = "online_retail.csv"          # change this if your CSV is elsewhere
+DATA_PATH = "online_retail.csv"         
 SAVE_DIR = "saved_models"
 RANDOM_STATE = 42
 
 ADMIN_CODES = ["POST", "M", "C2", "DOT", "BANK CHARGES", "PADS", "CRUK"]
 
-
-# --------------------------------------------------------------------------
-# Step 1: Load & Clean
-# --------------------------------------------------------------------------
 def load_and_clean_data(path: str) -> pd.DataFrame:
     df = pd.read_csv(path)
     df["InvoiceNo"] = df["InvoiceNo"].astype(str)
@@ -61,10 +34,6 @@ def load_and_clean_data(path: str) -> pd.DataFrame:
 
     return df.reset_index(drop=True)
 
-
-# --------------------------------------------------------------------------
-# Step 2: Build customer-level RFM table
-# --------------------------------------------------------------------------
 def build_rfm(df: pd.DataFrame) -> pd.DataFrame:
     snapshot_date = df["InvoiceDate"].max() + pd.Timedelta(days=1)
 
@@ -80,12 +49,6 @@ def build_rfm(df: pd.DataFrame) -> pd.DataFrame:
 
     return rfm
 
-
-# --------------------------------------------------------------------------
-# Step 3: Rule-based RFM quartile scoring -> segment labels
-#         (business rule, used ONLY to generate ground-truth labels for the
-#          supervised classifier below -- this step itself is not ML)
-# --------------------------------------------------------------------------
 def label_segments(rfm: pd.DataFrame) -> pd.DataFrame:
     rfm = rfm.copy()
 
@@ -110,10 +73,6 @@ def label_segments(rfm: pd.DataFrame) -> pd.DataFrame:
     rfm["Segment"] = rfm["RFM_Score"].apply(_label)
     return rfm
 
-
-# --------------------------------------------------------------------------
-# Step 4: Train the supervised segment classifier
-# --------------------------------------------------------------------------
 def train_segment_classifier(rfm: pd.DataFrame):
     features = ["Recency_log", "Frequency_log", "Monetary_log"]
 
@@ -154,10 +113,6 @@ def train_segment_classifier(rfm: pd.DataFrame):
 
     return model, scaler, label_encoder, features
 
-
-# --------------------------------------------------------------------------
-# Step 5: Build the item-based collaborative filtering recommender
-# --------------------------------------------------------------------------
 def build_recommender(df: pd.DataFrame):
     df_products = df[~df["StockCode"].str.upper().isin(ADMIN_CODES)].copy()
 
@@ -176,10 +131,6 @@ def build_recommender(df: pd.DataFrame):
 
     return item_sim_df, desc_lookup
 
-
-# --------------------------------------------------------------------------
-# Main
-# --------------------------------------------------------------------------
 def main():
     print("Loading & cleaning data...")
     df = load_and_clean_data(DATA_PATH)
