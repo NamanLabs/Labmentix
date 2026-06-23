@@ -1,3 +1,23 @@
+"""
+train_model.py
+================
+Shopper Spectrum -- Model Training Script
+
+Standalone script (run outside the notebook) that:
+  1. Loads and cleans the online_retail.csv transaction data
+  2. Builds customer-level RFM (Recency, Frequency, Monetary) features
+  3. Labels each customer's segment using a rule-based RFM quartile-scoring
+     system (business logic, NOT machine learning)
+  4. Trains a SUPERVISED classifier (Random Forest) to predict a customer's
+     segment from their RFM values -- this is the model the Streamlit app uses
+  5. Builds an item-based collaborative filtering recommendation engine
+     (cosine similarity over the customer-product purchase matrix)
+  6. Saves every artifact needed by app.py into the saved_models/ folder
+
+Run this once before launching the Streamlit app:
+    python train_model.py
+"""
+
 import os
 import warnings
 warnings.filterwarnings("ignore")
@@ -12,11 +32,12 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, f1_score, classification_report
 from sklearn.metrics.pairwise import cosine_similarity
 
-DATA_PATH = "online_retail.csv"         
+DATA_PATH = "online_retail.csv"          
 SAVE_DIR = "saved_models"
 RANDOM_STATE = 42
 
 ADMIN_CODES = ["POST", "M", "C2", "DOT", "BANK CHARGES", "PADS", "CRUK"]
+
 
 def load_and_clean_data(path: str) -> pd.DataFrame:
     df = pd.read_csv(path)
@@ -25,14 +46,15 @@ def load_and_clean_data(path: str) -> pd.DataFrame:
     df = df.drop_duplicates()
     df = df.dropna(subset=["CustomerID"])
     df = df.dropna(subset=["Description"])
-    df = df[~df["InvoiceNo"].str.startswith("C")]          # cancelled invoices
-    df = df[(df["Quantity"] > 0) & (df["UnitPrice"] > 0)]   # bad quantity/price rows
+    df = df[~df["InvoiceNo"].str.startswith("C")]          
+    df = df[(df["Quantity"] > 0) & (df["UnitPrice"] > 0)]   
 
     df["InvoiceDate"] = pd.to_datetime(df["InvoiceDate"])
     df["TotalPrice"] = df["Quantity"] * df["UnitPrice"]
     df["CustomerID"] = df["CustomerID"].astype(int)
 
     return df.reset_index(drop=True)
+
 
 def build_rfm(df: pd.DataFrame) -> pd.DataFrame:
     snapshot_date = df["InvoiceDate"].max() + pd.Timedelta(days=1)
@@ -48,6 +70,7 @@ def build_rfm(df: pd.DataFrame) -> pd.DataFrame:
     rfm["Monetary_log"] = np.log1p(rfm["Monetary"])
 
     return rfm
+
 
 def label_segments(rfm: pd.DataFrame) -> pd.DataFrame:
     rfm = rfm.copy()
@@ -113,6 +136,7 @@ def train_segment_classifier(rfm: pd.DataFrame):
 
     return model, scaler, label_encoder, features
 
+
 def build_recommender(df: pd.DataFrame):
     df_products = df[~df["StockCode"].str.upper().isin(ADMIN_CODES)].copy()
 
@@ -130,6 +154,7 @@ def build_recommender(df: pd.DataFrame):
     item_sim_df = pd.DataFrame(item_sim, index=basket_bin.columns, columns=basket_bin.columns)
 
     return item_sim_df, desc_lookup
+
 
 def main():
     print("Loading & cleaning data...")

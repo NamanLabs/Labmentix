@@ -1,3 +1,7 @@
+"""
+app.py — Shopper Spectrum | Premium UI
+"""
+
 import os
 import numpy as np
 import pandas as pd
@@ -320,6 +324,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+
 def build_similarity_matrix():
     df = pd.read_csv(DATA_PATH)
     df["InvoiceNo"] = df["InvoiceNo"].astype(str)
@@ -430,7 +435,9 @@ def predict(recency, frequency, monetary, artifacts):
     }).sort_values("Prob", ascending=False).reset_index(drop=True)
     return segment, proba_df
 
+
 def main():
+    # Hero
     st.markdown("""
     <div class="hero">
         <div class="hero-badge">🛒 ML-Powered Analytics</div>
@@ -464,6 +471,9 @@ def main():
 
     tab1, tab2 = st.tabs(["🎯  Product Recommendations", "👥  Customer Segmentation"])
 
+    
+    # TAB 1: Recommendations
+    
     with tab1:
         st.markdown("""
         <div class="section-header">
@@ -518,6 +528,9 @@ def main():
                             </div>
                             """, unsafe_allow_html=True)
 
+    
+    # TAB 2: Segmentation
+    
     with tab2:
         st.markdown("""
         <div class="section-header">
@@ -595,6 +608,7 @@ def main():
                 </div>
                 """, unsafe_allow_html=True)
 
+    # Footer
     st.markdown("""
     <hr class="custom-divider">
     <div style="text-align:center; color:#374151; font-size:0.78rem; padding-bottom:1rem;">
